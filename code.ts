@@ -1,37 +1,116 @@
-// This plugin will open a window to prompt the user to enter a number, and
-// it will then create that many rectangles on the screen.
-
-// This file holds the main code for plugins. Code in this file has access to
-// the *figma document* via the figma global object.
-// You can access browser APIs in the <script> tag inside "ui.html" which has a
-// full browser environment (See https://www.figma.com/plugin-docs/how-plugins-run).
-
-// This shows the HTML page in "ui.html".
+// Show the UI
 figma.showUI(__html__);
 
-// Calls to "parent.postMessage" from within the HTML page will trigger this
-// callback. The callback will be passed the "pluginMessage" property of the
-// posted message.
-figma.ui.onmessage =  (msg: {type: string, count: number}) => {
-  // One way of distinguishing between different types of messages sent from
-  // your HTML page is to use an object with a "type" property like this.
-  if (msg.type === 'create-shapes') {
-    // This plugin creates rectangles on the screen.
-    const numberOfRectangles = msg.count;
+let selectedTextNode: TextNode | null = null;
+let selectedShapeNode: ArcNode | null = null;
+let letterGroup: GroupNode | null = null;
 
-    const nodes: SceneNode[] = [];
-    for (let i = 0; i < numberOfRectangles; i++) {
-      const rect = figma.createRectangle();
-      rect.x = i * 150;
-      rect.fills = [{ type: 'SOLID', color: { r: 1, g: 0.5, b: 0 } }];
-      figma.currentPage.appendChild(rect);
-      nodes.push(rect);
+// Function to handle selection change
+function handleSelectionChange() {
+  selectedTextNode = null;
+  selectedShapeNode = null;
+  const selection = figma.currentPage.selection;
+  for (const node of selection) {
+    if (node.type === 'TEXT') {
+      selectedTextNode = node;
+    } else if (node.type === 'ARC') {
+      selectedShapeNode = node;
     }
-    figma.currentPage.selection = nodes;
-    figma.viewport.scrollAndZoomIntoView(nodes);
   }
+  figma.ui.postMessage({ type: 'selection-change', textName: selectedTextNode?.name, shapeName: selectedShapeNode?.name });
+}
 
-  // Make sure to close the plugin when you're done. Otherwise the plugin will
-  // keep running, which shows the cancel button at the bottom of the screen.
-  figma.closePlugin();
+// Function to create an arc if none is selected
+function createArc() {
+  const arc = figma.createArc();
+  arc.name = "Arc";
+  arc.x = figma.viewport.center.x;
+  arc.y = figma.viewport.center.y;
+  arc.resize(200, 200);
+  arc.arcStart = -Math.PI / 2;
+  arc.arcEnd = Math.PI / 2;
+  arc.innerRadius = 0.7;
+  arc.strokeWeight = 5;
+  arc.strokes = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }];
+  figma.currentPage.appendChild(arc);
+  return arc;
+}
+
+// Function to place text on path
+function placeTextOnPath(textNode: TextNode, pathNode: ArcNode) {
+  if (textNode && pathNode) {
+    const letters = textNode.characters.split('');
+    const letterNodes: TextNode[] = [];
+    let currentAngle = pathNode.arcStart;
+    const angleIncrement = (pathNode.arcEnd - pathNode.arcStart) / letters.length;
+
+    for (const letter of letters) {
+      const letterNode = figma.createText();
+      letterNode.characters = letter;
+      letterNode.fontName = textNode.fontName;
+      letterNode.fontSize = textNode.fontSize;
+
+      const radius = Math.max(pathNode.width, pathNode.height) / 2 * pathNode.innerRadius;
+      const centerX = pathNode.x + pathNode.width / 2;
+      const centerY = pathNode.y + pathNode.height / 2;
+
+      const letterWidth = letterNode.width;
+      const letterHeight = letterNode.height;
+      const angle = currentAngle;
+
+      letterNode.x = centerX + radius * Math.cos(angle) - letterWidth / 2;
+      letterNode.y = centerY + radius * Math.sin(angle) - letterHeight / 2;
+
+      letterNodes.push(letterNode);
+      figma.currentPage.appendChild(letterNode);
+      currentAngle += angleIncrement;
+    }
+    letterGroup = figma.group(letterNodes, figma.currentPage);
+    letterGroup.name = "Letter Group"
+  }
+}
+
+// Function to update spacing
+function updateSpacing(spacing: number) {
+  if (letterGroup && letterGroup.children.length > 1) {
+    const pathNode = selectedShapeNode;
+    const letters = letterGroup.children;
+
+    if (pathNode) {
+      let currentAngle = pathNode.arcStart;
+      const angleIncrement = (pathNode.arcEnd - pathNode.arcStart) / letters.length;
+
+      for (let i = 0; i < letters.length; i++) {
+        const letterNode = letters[i] as TextNode;
+
+        const radius = Math.max(pathNode.width, pathNode.height) / 2 * pathNode.innerRadius;
+        const centerX = pathNode.x + pathNode.width / 2;
+        const centerY = pathNode.y + pathNode.height / 2;
+        const angle = currentAngle;
+        letterNode.x = centerX + radius * Math.cos(angle) - letterNode.width / 2;
+        letterNode.y = centerY + radius * Math.sin(angle) - letterNode.height / 2;
+        currentAngle += angleIncrement + spacing / 100 * angleIncrement;
+      }
+    }
+  }
+}
+
+// Handle UI messages
+figma.ui.onmessage = (msg) => {
+  if (msg.type === 'text-on-path') {
+    if (!selectedTextNode) {
+      figma.notify('Please select a text node.');
+    } else if (!selectedShapeNode) {
+      figma.notify('No arc selected. Creating one for you');
+      selectedShapeNode = createArc();
+      figma.currentPage.selection = [selectedShapeNode];
+    } else {
+      placeTextOnPath(selectedTextNode, selectedShapeNode);
+    }
+  } else if (msg.type === 'update-spacing') {
+    updateSpacing(msg.spacing);
+  }
 };
+
+// Listen for selection changes
+figma.on('selectionchange', handleSelectionChange);

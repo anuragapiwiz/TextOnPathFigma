@@ -1,17 +1,23 @@
-<h2>Rectangle Creator</h2>
-<p>Count: <input id="count" type="number" value="5"></p>
-<button id="create">Create</button>
-<button id="cancel">Cancel</button>
+<h2>Figma Plugin</h2>
+<div>
+  <p>Selected Text: <span id="text-name"></span></p>
+  <p>Selected Shape: <span id="shape-name"></span></p>
+</div>
+<div>
+  <button id="text-on-path">Text on Path</button>
+</div>
+<div>
+  <label for="spacing-slider">Letter Spacing:</label>
+  <input type="range" id="spacing-slider" min="0" max="100" value="0">
+</div>
+
 <script>
-
-document.getElementById('create').onclick = () => {
-  const textbox = document.getElementById('count');
-  const count = parseInt(textbox.value, 10);
-  parent.postMessage({ pluginMessage: { type: 'create-shapes', count } }, '*')
+  document.getElementById('text-on-path').onclick = () => {
+    parent.postMessage({ pluginMessage: { type: 'text-on-path' } }, '*')
+  }
+  document.getElementById('spacing-slider').oninput = (event) => {
+    const spacing = parseInt(event.target.value, 10);
+    parent.postMessage({ pluginMessage: { type: 'update-spacing', spacing } }, '*');
+  }
 }
-
-document.getElementById('cancel').onclick = () => {
-  parent.postMessage({ pluginMessage: { type: 'cancel' } }, '*')
-}
-
 </script>
